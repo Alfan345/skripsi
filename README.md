@@ -1,53 +1,51 @@
-# Dokumen Teknis Proyek cookchela
+# CookChela — Backend Technical Document (Laravel + Supabase + Render)
 
 Versi: 1.0  
-Tanggal: 2025-11-25  
-Status: Siap Implementasi
+Tanggal: 2025-11-26  
+Audience: Tim Backend (3 orang) + Backend Lead  
+Tujuan: Dokumen teknis siap eksekusi untuk implementasi API CookChela.
 
 ---
 
-## 1. Ringkasan Proyek
+## Ringkasan Teknis
 
 | Item | Nilai |
 |------|-------|
-| Nama Proyek | cookchela |
-| Platform | Mobile |
-| Frontend | Flutter |
-| Backend | Laravel (REST API) |
+| Bahasa | PHP (Laravel 10/11) |
 | Database | Supabase PostgreSQL |
-| File Storage | Supabase Storage (bucket: `recipe-images`) |
-| Deploy Backend | Render |
-| Autentikasi | Email + Password & Google OAuth |
-| Style Login UI | Mendukung pemilihan akun (recent account list) seperti tampilan “Pilih Akun” |
-
-Tujuan: Menyediakan aplikasi berbagi resep dengan alur sederhana, mendukung multi-metode login, pembuatan resep lengkap (bahan & langkah), bookmark, feed timeline, dan pencarian dengan filter bahan & kategori.
-
----
-
-## 2. Domain Fitur
-
-1. Autentikasi (Registrasi, Login Email, Login Google, Refresh Token Opsional).
-2. Pemilihan akun cepat (recent accounts) berdasarkan device.
-3. CRUD Resep (Create, Read Detail, Update, Soft Delete).
-4. Bookmark Resep.
-5. Feed Timeline (pagination berbasis cursor).
-6. Pencarian Resep (include & exclude bahan, kategori, kata kunci judul).
-7. Kategori Resep (bisa dipilih multi per resep).
+| Auth | Supabase Auth (Email/Password + Google OAuth) |
+| Storage | Supabase Storage (bucket: `recipe-images`) |
+| Deployment | Render (Web Service) |
+| Aplikasi | CookChela |
+| Jumlah Dev Backend | 3 orang + Backend Lead (reviewer/standar teknis) |
 
 ---
 
-## 3. Standar Respons API
+## Fitur Wajib
 
-### 3.1 Format Success
+- Login & Registrasi User (Supabase Auth + Google)
+- Homepage dan Feed Timeline (pagination)
+- CRUD Resep + Upload Gambar
+- Bookmark Resep
+- Pencarian Resep + Filter Kategori/Bahan
+- Profile Page (lihat & edit)
+
+---
+
+## Bagian 1 — API Contract (by Domain Ownership)
+
+Base URL: `https://api.cookchela.com/api/v1` (contoh, sesuaikan Render)  
+Respons standar:
+
+- Success:
 ```json
 {
   "success": true,
-  "data": { },
-  "meta": { }
+  "data": {},
+  "meta": {}
 }
 ```
-
-### 3.2 Format Error
+- Error:
 ```json
 {
   "success": false,
@@ -55,57 +53,22 @@ Tujuan: Menyediakan aplikasi berbagi resep dengan alur sederhana, mendukung mult
     "code": "ERROR_CODE",
     "message": "Pesan ringkas",
     "details": {
-      "field_name": ["Penjelasan kesalahan"]
+      "field": ["penjelasan"]
     }
   }
 }
 ```
 
-### 3.3 Daftar Kode Error
-| Code | Deskripsi |
-|------|-----------|
-| VALIDATION_ERROR | Data body/query tidak sesuai aturan |
-| UNAUTHORIZED | Token hilang / tidak valid |
-| FORBIDDEN | Akses tidak diizinkan (bukan pemilik) |
-| NOT_FOUND | Data tidak ditemukan |
-| EMAIL_EXISTS | Email sudah terdaftar |
-| INVALID_CREDENTIALS | Email/password salah |
-| OAUTH_INVALID | Token Google tidak valid |
-| RECIPE_NOT_FOUND | Resep tidak ditemukan |
-| FILE_TOO_BIG | Ukuran file melewati batas |
-| UNSUPPORTED_MEDIA_TYPE | Format file tidak didukung |
-| REFRESH_INVALID | Refresh token invalid |
-| INTERNAL_ERROR | Kesalahan tak terduga |
+Pagination: cursor base64 dari `created_at::id`  
+Upload file: multipart form-data field `file` (image/jpeg|image/png, max 3MB).  
+Auth: Bearer token (access token dari Supabase Auth).
 
----
-
-## 4. Pagination (Cursor Strategy)
-
-- Cursor = base64 encode: `created_at_iso::id`
-- Parameter: `limit` (default 10, max 50), `cursor` (opsional).
-- Respons `meta.next_cursor = null` bila tidak ada halaman berikut.
-
----
-
-## 5. API Contract Lengkap
-
-Base URL contoh: `https://api.cookchela.com/api/v1`
-
-### 5.1 Auth
-
-| Endpoint | Method | Path | Auth | Deskripsi |
-|----------|--------|------|------|----------|
-| Registrasi | POST | /auth/register | No | Membuat akun email/password |
-| Login Email | POST | /auth/login | No | Login email/password |
-| Login Google | POST | /auth/login/google | No | Login via Google ID Token |
-| Me | GET | /auth/me | Yes | Profil user singkat |
-| Logout | POST | /auth/logout | Yes | Logout satu sesi |
-| Logout Semua | POST | /auth/logout-all | Yes | Revoke semua sesi (refresh) |
-| Refresh Token | POST | /auth/refresh | Yes (refresh token) | Perpanjang access token |
-| Daftar Akun (recent) | GET | /auth/recent | No (device_id diperlukan) | Mengambil akun yang pernah login di device |
+### Developer A — Auth + Profile
 
 #### POST /auth/register
-Body:
+- Method: POST
+- Auth: Tidak
+- Body:
 ```json
 {
   "name": "string|min:2|max:100",
@@ -114,41 +77,29 @@ Body:
   "password_confirmation": "string|same:password"
 }
 ```
-Contoh:
-```json
-{
-  "name": "Budi Santoso",
-  "email": "budi@example.com",
-  "password": "Rahasia123",
-  "password_confirmation": "Rahasia123"
-}
-```
-Respons (201):
+- Validasi: name, email unik (normalized lower-case), password regex
+- Respons (201):
 ```json
 {
   "success": true,
   "data": {
-    "user": {
-      "id": "uuid",
-      "name": "Budi Santoso",
-      "email": "budi@example.com",
-      "avatar_url": null,
-      "provider_primary": "email",
-      "last_login_at": null,
-      "created_at": "2025-11-25T10:00:00Z"
-    },
-    "access_token": "jwt-token",
-    "refresh_token": "refresh-token",
+    "user": { "id": "uuid", "name": "Budi", "email": "budi@example.com", "provider_primary": "email", "avatar_url": null },
+    "access_token": "jwt",
+    "refresh_token": "rt",
     "token_type": "Bearer",
     "expires_in": 1800
   },
   "meta": {}
 }
 ```
-Error (email sudah ada) → 409 / EMAIL_EXISTS.
+- Error: 409 EMAIL_EXISTS, 422 VALIDATION_ERROR
+
+Catatan: Backend mengarahkan Registrasi via Supabase Admin API (opsi 1) atau FE langsung ke Supabase Auth (opsi 2). Jika FE langsung Supabase, endpoint ini boleh skip (disediakan untuk fallback).
 
 #### POST /auth/login
-Body:
+- Method: POST
+- Auth: Tidak
+- Body:
 ```json
 {
   "email": "string|email",
@@ -156,210 +107,227 @@ Body:
   "device_id": "string|optional"
 }
 ```
-Respons (200):
-```json
-{
-  "success": true,
-  "data": {
-    "user": {
-      "id": "uuid",
-      "name": "Budi Santoso",
-      "email": "budi@example.com",
-      "avatar_url": null,
-      "provider_primary": "email",
-      "last_login_at": "2025-11-25T10:05:00Z"
-    },
-    "access_token": "jwt-token",
-    "refresh_token": "refresh-token",
-    "token_type": "Bearer",
-    "expires_in": 1800
-  },
-  "meta": {}
-}
-```
+- Validasi: email/password, audit login (device_id)
+- Respons (200): sama seperti register (dengan `provider_primary`)
+- Error: 401 INVALID_CREDENTIALS
+
+Jika FE login langsung ke Supabase, endpoint ini fungsi proxy (opsional). Minimal sediakan `/auth/me`.
 
 #### POST /auth/login/google
-Body:
+- Method: POST
+- Auth: Tidak
+- Body:
 ```json
 {
   "id_token": "string|required",
   "device_id": "string|optional"
 }
 ```
-Respons sama seperti login email (provider_primary = google).
+- Validasi: verifikasi id_token pada Google tokeninfo; map ke user + link user_oauth_accounts
+- Respons (200): sama login email (provider_primary=google)
+- Error: 401 OAUTH_INVALID
 
 #### GET /auth/me
-Header: Authorization  
-Respons:
+- Method: GET
+- Auth: Ya
+- Respons (200):
 ```json
 {
   "success": true,
   "data": {
-    "id": "uuid",
-    "name": "Budi",
-    "email": "budi@example.com",
-    "avatar_url": null,
-    "provider_primary": "email",
-    "last_login_at": "2025-11-25T10:05:00Z"
+    "id": "uuid", "name": "User", "email": "user@example.com",
+    "username": "userpyto6", "avatar_url": null,
+    "provider_primary": "email", "last_login_at": "2025-11-26T02:00:00Z",
+    "preferred_language": "id"
   },
   "meta": {}
 }
 ```
 
 #### POST /auth/logout
-Respons:
+- Method: POST
+- Auth: Ya
+- Respons:
 ```json
-{
-  "success": true,
-  "data": { "message": "Logout berhasil" },
-  "meta": {}
-}
+{ "success": true, "data": { "message": "Logout berhasil" }, "meta": {} }
 ```
 
 #### POST /auth/logout-all
-Respons:
+- Method: POST
+- Auth: Ya
+- Respons:
 ```json
-{
-  "success": true,
-  "data": { "message": "Semua sesi direvoke" },
-  "meta": {}
-}
+{ "success": true, "data": { "message": "Semua sesi direvoke" }, "meta": {} }
 ```
 
 #### POST /auth/refresh
-Body:
+- Method: POST
+- Auth: Ya (mengirim refresh token)
+- Body:
+```json
+{ "refresh_token": "string|required" }
+```
+- Respons:
+```json
+{ "success": true, "data": { "access_token": "new-jwt", "expires_in": 1800 }, "meta": {} }
+```
+- Error: 401 REFRESH_INVALID
+
+#### PATCH /profile
+- Method: PATCH
+- Path: /profile
+- Auth: Ya
+- Body (opsional):
 ```json
 {
-  "refresh_token": "string|required"
+  "name": "string|min:2|max:100",
+  "username": "string|regex:^[a-z0-9_]{3,50}$",
+  "avatar_url": "string|url",
+  "preferred_language": "string|in:id,en"
 }
 ```
-Respons:
-```json
-{
-  "success": true,
-  "data": {
-    "access_token": "new-jwt",
-    "expires_in": 1800,
-    "token_type": "Bearer"
-  },
-  "meta": {}
-}
-```
-
-#### GET /auth/recent
-Query Params:
-- `device_id` (wajib)
-
-Respons:
-```json
-{
-  "success": true,
-  "data": {
-    "accounts": [
-      {
-        "email": "user1@gmail.com",
-        "provider_primary": "google",
-        "last_login_at": "2025-11-25T10:04:00Z"
-      },
-      {
-        "email": "user2@gmail.com",
-        "provider_primary": "email",
-        "last_login_at": "2025-11-20T09:00:00Z"
-      }
-    ]
-  },
-  "meta": {
-    "device_id": "DEVICE-1234"
-  }
-}
-```
-
----
-
-### 5.2 Recipes
-
-| Endpoint | Method | Path | Auth | Deskripsi |
-|----------|--------|------|------|----------|
-| Feed | GET | /recipes | Optional | Resep terbaru (pagination) |
-| Detail | GET | /recipes/{id} | Optional | Detail lengkap |
-| Create | POST | /recipes | Yes | Buat resep |
-| Update | PUT | /recipes/{id} | Yes (pemilik) | Ubah resep |
-| Delete | DELETE | /recipes/{id} | Yes (pemilik) | Soft delete |
-| Upload Cover (opsional) | POST | /recipes/{id}/cover | Yes (pemilik) | Upload gambar cover |
-| List by User (opsional) | GET | /users/{id}/recipes | Optional | Daftar resep user |
-
-#### GET /recipes
-Query: `limit`, `cursor`
-Respons:
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "uuid",
-      "title": "Nasi Goreng",
-      "cover_image_url": "https://storage.supabase/recipe-images/...",
-      "user": {
-        "id": "uuid",
-        "name": "Budi"
-      },
-      "created_at": "2025-11-25T10:20:00Z",
-      "bookmarked": false
-    }
-  ],
-  "meta": {
-    "next_cursor": "base64cursor",
-    "limit": 10
-  }
-}
-```
-
-#### GET /recipes/{id}
-Respons:
+- Validasi: username unik (lowercase enforced), URL valid
+- Respons (200):
 ```json
 {
   "success": true,
   "data": {
     "id": "uuid",
-    "title": "Nasi Goreng Spesial",
-    "description": "Resep enak",
-    "cover_image_url": null,
-    "servings": 2,
-    "cook_time_minutes": 15,
-    "user": {
-      "id": "uuid",
-      "name": "Budi"
-    },
-    "ingredients": [
+    "name": "User PyTorch",
+    "username": "userpytorch6",
+    "avatar_url": null,
+    "preferred_language": "id"
+  },
+  "meta": {}
+}
+```
+- Error: 409 USERNAME_TAKEN
+
+#### GET /users/{username}
+- Method: GET
+- Auth: Tidak
+- Respons:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "username": "userpytorch6",
+    "name": "User PyTorch",
+    "avatar_url": null,
+    "recipes_count": 12,
+    "likes_received": 5300
+  },
+  "meta": {}
+}
+```
+- Error: 404 NOT_FOUND
+
+---
+
+### Developer B — Recipe CRUD + Feed + Homepage
+
+#### GET /home
+- Method: GET
+- Auth: Optional (recent_searches hanya tampil jika login)
+- Query: `limit_featured=3`, `limit_timeline=5`
+- Respons:
+```json
+{
+  "success": true,
+  "data": {
+    "greeting": { "name": "User", "message": "Halo, User 👋" },
+    "featured_recipes": [
+      { "id": "uuid", "title": "Chicken Katsu ala Hokben", "cover_image_url": "https://...", "likes_count": 2500 }
+    ],
+    "timeline_preview": [
       {
-        "id": "uuid",
-        "name": "nasi",
-        "measurement_text": "2 piring",
-        "quantity_number": null,
-        "unit": null
+        "id": "uuid", "title": "Ayam Goreng Mentega",
+        "cover_image_url": "https://...",
+        "short_description": "Lorem ipsum...",
+        "user": { "id": "uuid", "name": "User 1", "username": "user1" },
+        "likes_count": 2500, "userLiked": false, "bookmarked": false,
+        "cook_time_minutes": 60, "servings": 3, "created_at": "..."
       }
+    ],
+    "recent_searches": [
+      { "id": "uuid", "query_text": "Ayam Goreng Mentega", "executed_at": "2025-11-26T02:10:00Z" }
+    ]
+  },
+  "meta": { "limit_featured": 3, "limit_timeline": 5 }
+}
+```
+
+#### GET /recipes (Feed Timeline)
+- Method: GET
+- Auth: Optional
+- Query: `limit` (default 10, max 50), `cursor` (base64)
+- Respons:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid", "title": "Chicken Katsu ala Hokben",
+      "cover_image_url": "https://...",
+      "short_description": "Lorem...",
+      "user": { "id": "uuid", "name": "User 1", "username": "user1" },
+      "likes_count": 2500, "userLiked": false, "bookmarked": false,
+      "cook_time_minutes": 60, "servings": 3,
+      "created_at": "2025-11-26T01:55:00Z"
+    }
+  ],
+  "meta": { "next_cursor": "BASE64", "limit": 10 }
+}
+```
+
+#### GET /recipes/featured
+- Method: GET
+- Auth: Tidak
+- Query: `limit` (default 5)
+- Respons:
+```json
+{
+  "success": true,
+  "data": [
+    { "id": "uuid", "title": "Chicken Katsu ala Hokben", "cover_image_url": "https://...", "likes_count": 2500 }
+  ],
+  "meta": { "limit": 5 }
+}
+```
+
+#### GET /recipes/{id}
+- Method: GET
+- Auth: Optional
+- Respons:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid", "title": "Chicken Katsu ala Hokben",
+    "description": "Lorem ipsum dolor sit amet...",
+    "cover_image_url": "https://...",
+    "servings": 3, "cook_time_minutes": 60,
+    "likes_count": 2500, "userLiked": true, "bookmarked": false,
+    "share_url": "https://cookchela.com/recipe/uuid",
+    "user": { "id": "uuid", "name": "User 1", "username": "user1" },
+    "ingredients": [
+      { "id": "uuid", "name": "ayam", "measurement_text": "300 gram", "quantity_number": 300, "unit": "gram" }
     ],
     "steps": [
-      {
-        "id": "uuid",
-        "order": 1,
-        "text": "Siapkan bahan",
-        "photo_url": null
-      }
+      { "id": "uuid", "order": 1, "text": "Siapkan bahan", "photo_url": null }
     ],
-    "categories": [
-      { "id": "uuid", "name": "Makanan Utama", "slug": "makanan-utama" }
-    ],
-    "bookmarked": false,
-    "created_at": "2025-11-25T10:21:00Z",
-    "updated_at": "2025-11-25T10:22:00Z"
+    "categories": [ { "id": "uuid", "name": "Makanan Utama", "slug": "makanan-utama" } ],
+    "created_at": "...", "updated_at": "..."
   },
   "meta": {}
 }
 ```
 
-#### POST /recipes
-Body:
+#### POST /recipes (Create)
+- Method: POST
+- Auth: Ya
+- Body:
 ```json
 {
   "title": "string|min:1|max:100",
@@ -369,297 +337,299 @@ Body:
   "cook_time_minutes": "int|positive|optional",
   "category_ids": ["uuid","uuid"],
   "ingredients": [
-    {
-      "name": "string|lowercase|min:1|max:120",
-      "measurement_text": "string|min:1|max:120",
-      "quantity_number": "decimal|optional",
-      "unit": "string|max:30|optional"
-    }
+    { "name": "string|lowercase|min:1|max:120", "measurement_text": "string|min:1|max:120", "quantity_number": "decimal|optional", "unit": "string|max:30|optional" }
   ],
   "steps": [
-    {
-      "text": "string|min:1",
-      "photo_url": "string|url|optional"
-    }
+    { "text": "string|min:1", "photo_url": "string|url|optional" }
   ]
 }
 ```
-Respons (201):
+- Validasi: minimal 1 ingredient & step; ingredient `name` lowercase; category_ids valid
+- Respons (201):
 ```json
-{
-  "success": true,
-  "data": { "id": "uuid", "title": "Nasi Goreng Spesial" },
-  "meta": {}
-}
+{ "success": true, "data": { "id": "uuid", "title": "Nasi Goreng Spesial" }, "meta": {} }
 ```
 
-Validasi:
-- Minimal 1 ingredient & 1 step.
-- Ingredient name lowercase (backend menormalkan).
-- Tidak ada duplikasi ingredient name pada satu resep.
-
-#### PUT /recipes/{id}
-Body (partial, sama skema create, semua opsional):
+#### PUT /recipes/{id} (Update)
+- Method: PUT
+- Auth: Ya (pemilik)
+- Body: partial (sama schema create, semua opsional)
+- Respons (200):
 ```json
-{
-  "title": "Nasi Goreng Update",
-  "ingredients": [
-    { "name": "nasi", "measurement_text": "2 piring" }
-  ]
-}
-```
-Respons (200):
-```json
-{
-  "success": true,
-  "data": { "id": "uuid", "title": "Nasi Goreng Update" },
-  "meta": {}
-}
+{ "success": true, "data": { "id": "uuid", "title": "Nasi Goreng Update" }, "meta": {} }
 ```
 
-#### DELETE /recipes/{id}
-Soft delete:
+#### DELETE /recipes/{id} (Soft Delete)
+- Method: DELETE
+- Auth: Ya (pemilik)
+- Respons:
 ```json
-{
-  "success": true,
-  "data": { "message": "Resep dihapus" },
-  "meta": {}
-}
+{ "success": true, "data": { "message": "Resep dihapus" }, "meta": {} }
 ```
 
-#### POST /recipes/{id}/cover (multipart)
-Form-data: file=image/jpeg/png (max 3MB)  
-Respons:
+#### POST /recipes/{id}/cover (Upload Cover — Opsional)
+- Method: POST
+- Auth: Ya (pemilik)
+- Upload: multipart/form-data `file` (image/jpeg|png; max 3MB)
+- Respons:
 ```json
-{
-  "success": true,
-  "data": {
-    "cover_image_url": "https://storage.supabase/recipe-images/.../cover.jpg"
-  },
-  "meta": {}
-}
+{ "success": true, "data": { "cover_image_url": "https://storage.supabase/recipe-images/.../cover.jpg" }, "meta": {} }
 ```
+- Error: 400 FILE_TOO_BIG, 415 UNSUPPORTED_MEDIA_TYPE
 
-### 5.3 Bookmark
-
-| Endpoint | Method | Path | Auth | Deskripsi |
-|----------|--------|------|------|----------|
-| Tambah | POST | /recipes/{id}/bookmark | Yes | Bookmark resep |
-| Hapus | DELETE | /recipes/{id}/bookmark | Yes | Hapus bookmark |
-| List | GET | /bookmarks | Yes | Daftar bookmark user |
-
-#### POST /recipes/{id}/bookmark
-Respons:
+#### POST /recipes/{id}/like
+- Method: POST
+- Auth: Ya
+- Respons:
 ```json
-{
-  "success": true,
-  "data": { "message": "Bookmark ditambahkan" },
-  "meta": {}
-}
+{ "success": true, "data": { "message": "Resep di-like", "likes_count": 2501, "userLiked": true }, "meta": {} }
 ```
+- Error: 409 ALREADY_LIKED (optional)
 
-#### DELETE /recipes/{id}/bookmark
-Respons:
+#### DELETE /recipes/{id}/like
+- Method: DELETE
+- Auth: Ya
+- Respons:
 ```json
-{
-  "success": true,
-  "data": { "message": "Bookmark dihapus" },
-  "meta": {}
-}
-```
-
-#### GET /bookmarks
-Query: `limit`, `cursor`
-Respons:
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "recipe": {
-        "id": "uuid",
-        "title": "Nasi Goreng",
-        "cover_image_url": "https://..."
-      },
-      "created_at": "2025-11-25T11:00:00Z"
-    }
-  ],
-  "meta": {
-    "next_cursor": null,
-    "limit": 10
-  }
-}
-```
-
-### 5.4 Search
-
-| Endpoint | Method | Path | Auth | Deskripsi |
-|----------|--------|------|------|----------|
-| Pencarian Resep | GET | /search/recipes | Optional | Filter bahan (include+exclude), kategori, keyword judul |
-
-Query Params:
-- `q` (string, optional) – wildcard pencarian di judul (case-insensitive)
-- `include` (comma separated ingredients lowercase)
-- `exclude` (comma separated ingredients lowercase)
-- `category_ids` (comma separated UUID)
-- `limit`, `cursor`
-
-Respons:
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "uuid",
-      "title": "Nasi Goreng Telur",
-      "cover_image_url": null,
-      "matched_ingredients": ["nasi","telur"]
-    }
-  ],
-  "meta": {
-    "next_cursor": null,
-    "limit": 10,
-    "filters": {
-      "include": ["nasi","telur"],
-      "exclude": ["gula"],
-      "category_ids": ["cat1","cat2"],
-      "q": "goreng"
-    }
-  }
-}
-```
-
-### 5.5 Categories
-
-| Endpoint | Method | Path | Auth | Deskripsi |
-|----------|--------|------|------|----------|
-| List Kategori | GET | /categories | No | Daftar kategori aktif |
-
-Respons:
-```json
-{
-  "success": true,
-  "data": [
-    { "id": "uuid", "name": "Makanan Utama", "slug": "makanan-utama" },
-    { "id": "uuid", "name": "Minuman", "slug": "minuman" }
-  ],
-  "meta": {}
-}
+{ "success": true, "data": { "message": "Like dihapus", "likes_count": 2500, "userLiked": false }, "meta": {} }
 ```
 
 ---
 
-## 6. Database Schema (ERD)
+### Developer C — Bookmark + Search + Profile Page
 
-### 6.1 Tabel Utama
+#### POST /recipes/{id}/bookmark
+- Method: POST
+- Auth: Ya
+- Respons:
+```json
+{ "success": true, "data": { "message": "Bookmark ditambahkan" }, "meta": {} }
+```
 
-#### users
-| Kolom | Tipe | Ketentuan |
-|-------|------|-----------|
-| id | uuid | PK |
-| name | varchar(100) | not null |
-| email | varchar(150) | unique not null |
-| normalized_email | varchar(150) | unique not null (lower) |
-| password_hash | varchar(255) | nullable (null jika hanya OAuth) |
-| avatar_url | text | nullable |
-| provider_primary | varchar(30) | default 'email' |
-| last_login_at | timestamptz | nullable |
-| created_at | timestamptz | default now() |
-| updated_at | timestamptz | default now() |
+#### DELETE /recipes/{id}/bookmark
+- Method: DELETE
+- Auth: Ya
+- Respons:
+```json
+{ "success": true, "data": { "message": "Bookmark dihapus" }, "meta": {} }
+```
 
-#### user_oauth_accounts
-| Kolom | Tipe | Ketentuan |
-|-------|------|-----------|
-| id | uuid | PK |
-| user_id | uuid | FK users.id cascade |
-| provider | varchar(30) | 'google' |
-| provider_user_id | varchar(190) | not null |
-| created_at | timestamptz | default now() |
-Unique: (provider, provider_user_id)
+#### GET /bookmarks
+- Method: GET
+- Auth: Ya
+- Query: `limit`, `cursor`
+- Respons:
+```json
+{
+  "success": true,
+  "data": [
+    { "recipe": { "id": "uuid", "title": "Nasi Goreng", "cover_image_url": "https://..." }, "created_at": "2025-11-26T02:20:00Z" }
+  ],
+  "meta": { "next_cursor": null, "limit": 10 }
+}
+```
 
-#### user_login_audit
-| Kolom | Tipe |
-|-------|------|
-| id | bigserial |
-| user_id | uuid (FK) |
-| login_at | timestamptz default now() |
-| provider | varchar(30) |
-| ip_address | varchar(45) nullable |
-| user_agent | text nullable |
-| device_id | varchar(120) nullable |
+#### GET /ingredients/groups
+- Method: GET
+- Auth: Tidak
+- Respons:
+```json
+{
+  "success": true,
+  "data": [
+    { "id": "uuid", "name": "Protein", "slug": "protein", "items": ["ayam","sapi","telur","ikan"] },
+    { "id": "uuid", "name": "Bumbu & Rempah", "slug": "bumbu-rempah", "items": ["cabe","kayu manis","bawang putih","jahe"] }
+  ],
+  "meta": {}
+}
+```
 
-#### refresh_tokens (opsional)
-| Kolom | Tipe |
-|-------|------|
-| id | uuid |
-| user_id | uuid (FK) |
-| token_hash | varchar(255) |
-| expires_at | timestamptz |
-| revoked_at | timestamptz nullable |
-| created_at | timestamptz default now() |
+#### GET /search/recipes
+- Method: GET
+- Auth: Optional
+- Query:
+  - `q` (string, optional) — cari di title (ILIKE)
+  - `include` (comma lower) — semua harus ada
+  - `exclude` (comma lower) — tidak boleh ada
+  - `category_ids` (comma UUID)
+  - `limit`, `cursor`
+- Respons:
+```json
+{
+  "success": true,
+  "data": [
+    { "id": "uuid", "title": "Ayam Goreng Telur", "cover_image_url": "https://...", "matched_ingredients": ["ayam","telur"], "likes_count": 1700 }
+  ],
+  "meta": {
+    "next_cursor": null, "limit": 10,
+    "filters": { "include": ["ayam","telur"], "exclude": ["gula"], "category_ids": ["cat1"], "q": "goreng" }
+  }
+}
+```
 
-#### recipes
-| Kolom | Tipe |
-|-------|------|
-| id | uuid |
-| user_id | uuid FK |
-| title | varchar(100) |
-| description | text nullable |
-| cover_image_url | text nullable |
-| servings | int nullable |
-| cook_time_minutes | int nullable |
-| ingredient_names | text[] default '{}' |
-| created_at | timestamptz |
-| updated_at | timestamptz |
-| deleted_at | timestamptz nullable |
+#### GET /search/suggest
+- Method: GET
+- Auth: Tidak
+- Query: `term` (min 2 chars), `limit` (default 8)
+- Respons:
+```json
+{
+  "success": true,
+  "data": {
+    "recipes": [ { "id": "uuid", "title": "Ayam Goreng Mentega" } ],
+    "ingredients": ["ayam","mentega","bawang putih"],
+    "users": [ { "id": "uuid", "username": "user1", "name": "User 1" } ]
+  },
+  "meta": { "limit": 8, "term": "aya" }
+}
+```
 
-#### recipe_ingredients
-| Kolom | Tipe |
-|-------|------|
-| id | uuid |
-| recipe_id | uuid FK |
-| name | varchar(120) |
-| measurement_text | varchar(120) |
-| quantity_number | numeric(10,2) nullable |
-| unit | varchar(30) nullable |
+#### GET /search/history
+- Method: GET
+- Auth: Ya
+- Query: `limit` (default 10)
+- Respons:
+```json
+{
+  "success": true,
+  "data": [
+    { "id": "uuid", "query_text": "Ayam Goreng Mentega", "executed_at": "2025-11-26T02:10:00Z" }
+  ],
+  "meta": { "limit": 10 }
+}
+```
 
-#### recipe_steps
-| Kolom | Tipe |
-|-------|------|
-| id | uuid |
-| recipe_id | uuid FK |
-| step_order | int |
-| text | text |
-| photo_url | text nullable |
+#### DELETE /search/history
+- Method: DELETE
+- Auth: Ya
+- Respons:
+```json
+{ "success": true, "data": { "deleted": true }, "meta": {} }
+```
 
-Unique: (recipe_id, step_order)
+---
 
-#### bookmarks
-| Kolom | Tipe |
-|-------|------|
-| id | uuid |
-| user_id | uuid FK |
-| recipe_id | uuid FK |
-| created_at | timestamptz |
+## Bagian 2 — Database Architecture (ERD)
 
-Unique: (user_id, recipe_id)
+### Tabel & Kolom (Supabase PostgreSQL)
 
-#### categories
-| Kolom | Tipe |
-|-------|------|
-| id | uuid |
-| name | varchar(80) unique |
-| slug | varchar(100) unique |
-| created_at | timestamptz |
+1) users  
+- id UUID PK  
+- name VARCHAR(100) NOT NULL  
+- email VARCHAR(150) UNIQUE NOT NULL  
+- normalized_email VARCHAR(150) UNIQUE NOT NULL (lowercase)  
+- password_hash VARCHAR(255) NULL (null jika hanya OAuth)  
+- avatar_url TEXT NULL  
+- username VARCHAR(50) UNIQUE NULL (lowercase, alnum+underscore)  
+- provider_primary VARCHAR(30) NOT NULL DEFAULT 'email'  
+- preferred_language VARCHAR(10) NOT NULL DEFAULT 'id'  
+- last_login_at TIMESTAMPTZ NULL  
+- created_at TIMESTAMPTZ DEFAULT now()  
+- updated_at TIMESTAMPTZ DEFAULT now()  
+Index: unique(email), unique(normalized_email), unique(username), index(last_login_at)
 
-#### recipe_category
-| Kolom | Tipe |
-|-------|------|
-| recipe_id | uuid FK |
-| category_id | uuid FK |
-Primary key: (recipe_id, category_id)
+2) user_oauth_accounts  
+- id UUID PK  
+- user_id UUID FK → users.id (cascade)  
+- provider VARCHAR(30) NOT NULL ('google')  
+- provider_user_id VARCHAR(190) NOT NULL  
+- created_at TIMESTAMPTZ DEFAULT now()  
+Constraints: unique(provider, provider_user_id), index(user_id)
 
-### 6.2 ER Diagram (PlantUML)
+3) refresh_tokens (opsional bila pakai refresh manual)  
+- id UUID PK  
+- user_id UUID FK → users.id  
+- token_hash VARCHAR(255) NOT NULL  
+- expires_at TIMESTAMPTZ NOT NULL  
+- revoked_at TIMESTAMPTZ NULL  
+- created_at TIMESTAMPTZ DEFAULT now()  
+Index: (user_id), (expires_at), unique(token_hash) (opsional)
+
+4) user_login_audit  
+- id BIGSERIAL PK  
+- user_id UUID FK → users.id  
+- login_at TIMESTAMPTZ DEFAULT now()  
+- provider VARCHAR(30) NOT NULL  
+- ip_address VARCHAR(45) NULL  
+- user_agent TEXT NULL  
+- device_id VARCHAR(120) NULL  
+Index: (user_id, login_at DESC), (device_id)
+
+5) recipes  
+- id UUID PK  
+- user_id UUID FK → users.id (cascade)  
+- title VARCHAR(100) NOT NULL  
+- description TEXT NULL  
+- cover_image_url TEXT NULL  
+- servings INT NULL  
+- cook_time_minutes INT NULL  
+- ingredient_names TEXT[] DEFAULT '{}'  
+- likes_count INT DEFAULT 0 (denormalisasi opsional)  
+- created_at TIMESTAMPTZ DEFAULT now()  
+- updated_at TIMESTAMPTZ DEFAULT now()  
+- deleted_at TIMESTAMPTZ NULL  
+Index: (created_at DESC), (user_id, created_at), (likes_count DESC, created_at DESC) opsional
+
+6) recipe_ingredients  
+- id UUID PK  
+- recipe_id UUID FK → recipes.id (cascade)  
+- name VARCHAR(120) NOT NULL (lowercase canonical)  
+- measurement_text VARCHAR(120) NOT NULL  
+- quantity_number NUMERIC(10,2) NULL  
+- unit VARCHAR(30) NULL  
+Constraints: index(recipe_id), index(name)
+
+7) recipe_steps  
+- id UUID PK  
+- recipe_id UUID FK → recipes.id (cascade)  
+- step_order INT NOT NULL  
+- text TEXT NOT NULL  
+- photo_url TEXT NULL  
+Constraints: unique(recipe_id, step_order), index(recipe_id)
+
+8) bookmarks  
+- id UUID PK  
+- user_id UUID FK → users.id (cascade)  
+- recipe_id UUID FK → recipes.id (cascade)  
+- created_at TIMESTAMPTZ DEFAULT now()  
+Constraints: unique(user_id, recipe_id), index(user_id), index(recipe_id)
+
+9) recipe_likes  
+- id UUID PK  
+- recipe_id UUID FK → recipes.id (cascade)  
+- user_id UUID FK → users.id (cascade)  
+- created_at TIMESTAMPTZ DEFAULT now()  
+Constraints: unique(recipe_id, user_id), index(recipe_id), index(user_id)
+
+10) categories  
+- id UUID PK  
+- name VARCHAR(80) UNIQUE NOT NULL  
+- slug VARCHAR(100) UNIQUE NOT NULL  
+- created_at TIMESTAMPTZ DEFAULT now()  
+Index: unique(name), unique(slug)
+
+11) recipe_category (pivot)  
+- recipe_id UUID FK → recipes.id (cascade)  
+- category_id UUID FK → categories.id (cascade)  
+PK: (recipe_id, category_id)  
+Index: (recipe_id), (category_id)
+
+12) ingredient_groups  
+- id UUID PK  
+- name VARCHAR(80) UNIQUE NOT NULL  
+- slug VARCHAR(100) UNIQUE NOT NULL  
+- display_order INT DEFAULT 0  
+- created_at TIMESTAMPTZ DEFAULT now()
+
+13) ingredient_group_members  
+- id UUID PK  
+- ingredient_group_id UUID FK → ingredient_groups.id (cascade)  
+- ingredient_name VARCHAR(120) NOT NULL (lowercase)  
+- created_at TIMESTAMPTZ DEFAULT now()  
+Constraints: unique(ingredient_group_id, ingredient_name), index(ingredient_name)
+
+Relasi utama ditunjukkan berikut:
+
 ```plantuml
 @startuml
 entity users {
@@ -670,88 +640,30 @@ entity users {
   normalized_email: varchar
   password_hash: varchar?
   avatar_url: text?
+  username: varchar?
   provider_primary: varchar
+  preferred_language: varchar
   last_login_at: timestamptz?
   created_at: timestamptz
   updated_at: timestamptz
 }
 
-entity user_oauth_accounts {
-  *id: uuid
-  user_id: uuid
-  provider: varchar
-  provider_user_id: varchar
-  created_at: timestamptz
-}
-
-entity user_login_audit {
-  *id: bigserial
-  user_id: uuid
-  login_at: timestamptz
-  provider: varchar
-  ip_address: varchar?
-  user_agent: text?
-  device_id: varchar?
-}
-
-entity refresh_tokens {
-  *id: uuid
-  user_id: uuid
-  token_hash: varchar
-  expires_at: timestamptz
-  revoked_at: timestamptz?
-  created_at: timestamptz
-}
+entity user_oauth_accounts { *id: uuid, user_id: uuid, provider: varchar, provider_user_id: varchar, created_at: timestamptz }
+entity refresh_tokens { *id: uuid, user_id: uuid, token_hash: varchar, expires_at: timestamptz, revoked_at: timestamptz?, created_at: timestamptz }
+entity user_login_audit { *id: bigserial, user_id: uuid, login_at: timestamptz, provider: varchar, ip_address: varchar?, user_agent: text?, device_id: varchar? }
 
 entity recipes {
-  *id: uuid
-  user_id: uuid
-  title: varchar
-  description: text?
-  cover_image_url: text?
-  servings: int?
-  cook_time_minutes: int?
-  ingredient_names: text[]
-  created_at: timestamptz
-  updated_at: timestamptz
-  deleted_at: timestamptz?
+  *id: uuid, user_id: uuid, title: varchar, description: text?, cover_image_url: text?, servings: int?, cook_time_minutes: int?,
+  ingredient_names: text[], likes_count: int, created_at: timestamptz, updated_at: timestamptz, deleted_at: timestamptz?
 }
-
-entity recipe_ingredients {
-  *id: uuid
-  recipe_id: uuid
-  name: varchar
-  measurement_text: varchar
-  quantity_number: numeric?
-  unit: varchar?
-}
-
-entity recipe_steps {
-  *id: uuid
-  recipe_id: uuid
-  step_order: int
-  text: text
-  photo_url: text?
-}
-
-entity bookmarks {
-  *id: uuid
-  user_id: uuid
-  recipe_id: uuid
-  created_at: timestamptz
-}
-
-entity categories {
-  *id: uuid
-  name: varchar
-  slug: varchar
-  created_at: timestamptz
-}
-
-entity recipe_category {
-  *recipe_id: uuid
-  *category_id: uuid
-}
+entity recipe_ingredients { *id: uuid, recipe_id: uuid, name: varchar, measurement_text: varchar, quantity_number: numeric?, unit: varchar? }
+entity recipe_steps { *id: uuid, recipe_id: uuid, step_order: int, text: text, photo_url: text? }
+entity bookmarks { *id: uuid, user_id: uuid, recipe_id: uuid, created_at: timestamptz }
+entity recipe_likes { *id: uuid, recipe_id: uuid, user_id: uuid, created_at: timestamptz }
+entity categories { *id: uuid, name: varchar, slug: varchar, created_at: timestamptz }
+entity recipe_category { *recipe_id: uuid, *category_id: uuid }
+entity ingredient_groups { *id: uuid, name: varchar, slug: varchar, display_order: int, created_at: timestamptz }
+entity ingredient_group_members { *id: uuid, ingredient_group_id: uuid, ingredient_name: varchar, created_at: timestamptz }
 
 users ||--o{ recipes : owns
 recipes ||--o{ recipe_ingredients : has
@@ -759,143 +671,171 @@ recipes ||--o{ recipe_steps : has
 users ||--o{ bookmarks : has
 recipes ||--o{ bookmarks : bookmarked_by
 recipes ||--o{ recipe_category : categorized
-categories ||--o{ recipe_category : used_in
+categories ||--o{ recipe_category : has
 users ||--o{ user_oauth_accounts : oauth
-users ||--o{ user_login_audit : logins
 users ||--o{ refresh_tokens : refresh
+users ||--o{ user_login_audit : logins
+recipes ||--o{ recipe_likes : liked_by
+ingredient_groups ||--o{ ingredient_group_members : includes
 @enduml
 ```
 
-### 6.3 Index Rekomendasi
-| Tabel | Index | Tujuan |
-|-------|-------|--------|
-| users | unique(email), unique(normalized_email), index(last_login_at) | Login cepat & daftar akun |
-| user_login_audit | index(device_id), index(user_id, login_at DESC) | Daftar akun per device |
-| recipes | index(created_at DESC), index(user_id, created_at) | Feed & filter user |
-| recipe_ingredients | index(recipe_id), index(name) | Pencarian bahan |
-| bookmarks | unique(user_id, recipe_id), index(user_id), index(recipe_id) | Operasi bookmark |
-| recipe_steps | unique(recipe_id, step_order), index(recipe_id) | Ambil langkah cepat |
-| categories | unique(name), unique(slug) | Lookup kategori |
-| recipe_category | index(category_id), index(recipe_id) | Filter kategori |
-| recipes(ingredient_names GIN) (opsional) | Search include/exclude lebih cepat |
-
 ---
 
-## 7. Coding Guideline Laravel
+## Bagian 3 — Coding Guidelines Laravel
 
-### 7.1 Struktur Folder
+### Folder Structure
 ```
 app/
   Http/
     Controllers/
       Auth/
+      Profile/
       Recipe/
       Bookmark/
       Search/
-      Category/
+      Home/
     Requests/
     Middleware/
   Domain/
     Users/
-      Models/
-      Services/
-      Repositories/
+      Models/User.php
+      Services/AuthService.php
+      Services/ProfileService.php
+      Repositories/UserRepository.php
+      Repositories/OAuthRepository.php
+      Repositories/RefreshTokenRepository.php
+      Repositories/LoginAuditRepository.php
     Recipes/
-      Models/
-      Services/
-      Repositories/
+      Models/Recipe.php
+      Models/RecipeIngredient.php
+      Models/RecipeStep.php
+      Models/Bookmark.php
+      Models/RecipeLike.php
+      Models/Category.php
+      Models/IngredientGroup.php
+      Models/IngredientGroupMember.php
+      Services/RecipeService.php
+      Services/FeedService.php
+      Services/HomeService.php
+      Services/LikeService.php
+      Repositories/RecipeRepository.php
+      Repositories/BookmarkRepository.php
+      Repositories/LikeRepository.php
+      Repositories/CategoryRepository.php
+      Repositories/IngredientGroupRepository.php
+    Search/
+      Services/SearchService.php
+      Repositories/SearchRepository.php
   Support/
-    Exceptions/
-    Helpers/
-    Transformers/
-config/
-database/
-  migrations/
+    Exceptions/DomainException.php
+    Helpers/ApiResponse.php
+    Traits/NormalizesEmail.php
 routes/
   api.php
+database/
+  migrations/
 tests/
 ```
 
-### 7.2 Naming Convention
-| Item | Format | Contoh |
-|------|--------|--------|
-| Controller | PascalCase + Controller | RecipeController |
-| Service | PascalCase + Service | AuthService |
-| Repository | PascalCase + Repository | UserRepository |
-| Request | PascalCase + Request | RegisterRequest |
-| Model | Singular PascalCase | Recipe |
-| Method Service | verb+Noun | createRecipe(), searchRecipes() |
-| Route Group | `api/v1/...` | /api/v1/recipes |
+### Naming Convention
+- Controller: PascalCase + `Controller` (RecipeController)
+- Service: PascalCase + `Service` (AuthService)
+- Repository: PascalCase + `Repository`
+- Model: Singular PascalCase (Recipe)
+- Request: PascalCase + `Request` (CreateRecipeRequest)
+- Method Service: `verbNoun` (createRecipe, searchRecipes)
+- Route prefix: `/api/v1/...`
 
-### 7.3 Response Helper
-Buat helper `ApiResponse`:
+### JSON Response Standard (Wajib)
+Gunakan helper:
 ```php
 class ApiResponse {
-  public static function success($data = [], $meta = [], $code = 200) {
+  public static function success($data = [], $meta = [], int $code = 200) {
     return response()->json(['success' => true, 'data' => $data, 'meta' => $meta], $code);
   }
-  public static function error($code, $message, $details = [], $http = 400) {
-    return response()->json(['success' => false, 'error' => [
-      'code' => $code, 'message' => $message, 'details' => $details
-    ]], $http);
+  public static function error(string $code, string $message, array $details = [], int $http = 400) {
+    return response()->json(['success' => false, 'error' => ['code' => $code, 'message' => $message, 'details' => $details]], $http);
   }
 }
 ```
 
-### 7.4 Validasi
-- Gunakan Form Request untuk setiap endpoint create/update.
-- Password regex: `/^(?=.*[0-9]).{8,}$/`
-- Ingredient name di-normalisasi lowercase di Service sebelum simpan.
-- Minimal 1 bahan & 1 langkah saat create recipe.
-- Cursor base64 decode validasi (return VALIDATION_ERROR jika tidak valid).
+### Exception Handling
+- ValidationException → `VALIDATION_ERROR` (422)
+- DomainException (business rule) → `FORBIDDEN` (403) atau `NOT_FOUND` (404)
+- AuthenticationException → `UNAUTHORIZED` (401)
+- Throwable umum → `INTERNAL_ERROR` (500, log detail)
+- Map di `app/Exceptions/Handler.php`
 
-### 7.5 Migration Rules
-- Gunakan UUID (extension `uuid-ossp` di Supabase).
-- `timestamps()` untuk created/updated.
-- Soft delete pada `recipes` dengan `deleted_at`.
-- Foreign key dengan cascade delete untuk data turunan.
+### Migration Rules
+- UUID sebagai PK (`uuid_generate_v4()`)
+- timestamps (`created_at`, `updated_at`)
+- Soft delete pada `recipes` (kolom `deleted_at`)
+- FK cascade untuk turunan (ingredients, steps, likes, bookmarks)
+- Index untuk feed & search sesuai daftar ERD
 
-### 7.6 Model & Relasi
-- Recipe: `user()`, `ingredients()`, `steps()`, `categories()`, `bookmarks()`.
-- User: `recipes()`, `bookmarks()`, `oauthAccounts()`, `loginAudits()`, `refreshTokens()`.
-- Category: `recipes()` via pivot.
+### Commenting Rules
+- PHPDoc di semua Service public method: deskripsi, parameter, return, throws
+- Komentar hanya untuk logika non-trivial (pagination keyset, search include/exclude)
+- Hindari komentar trivial
 
-### 7.7 Repository Pattern
-Contoh:
-```php
-class RecipeRepository {
-  public function findById($id) { /* query join ingredients & steps */ }
-  public function create(array $data) { /* insert transaction */ }
-  public function update(Recipe $recipe, array $data) { /* update */ }
-  public function feed($cursor, $limit) { /* keyset pagination */ }
-  public function search($filters) { /* compose query */ }
-}
-```
-
-### 7.8 Error Handling
-- DomainException → map ke `FORBIDDEN` / `NOT_FOUND`.
-- ValidationException → `VALIDATION_ERROR`.
-- Exception umum → `INTERNAL_ERROR` (log detail di file log, jangan bocor ke FE).
-
-### 7.9 Komentar
-- PHPDoc di semua Service public method: param & return.
-- Hindari komentar berlebihan yang menjelaskan hal trivial.
-- Berikan komentar pada algoritma pagination / pencarian.
-
-### 7.10 Testing
-| Jenis | Keterangan |
-|-------|-----------|
-| Unit Test | Service, transform, utility |
-| Feature Test | Auth, Recipe CRUD, Search |
-| Performance Test (opsional) | Query search dengan include/exclude banyak |
+### Authorization & Middleware
+- Middleware `auth:sanctum` atau custom JWT guard verifikasi Supabase token (JWKS)
+- Gate/Policy:
+  - RecipePolicy: update/delete hanya pemilik
+  - BookmarkPolicy: hanya pemilik bookmark (opsional)
+- Verification token: JWKS `https://<project>.supabase.co/auth/v1/jwks`
 
 ---
 
-## 8. Deployment Checklist (Render + Supabase)
+## Bagian 4 — Technical Workflow untuk 3 Dev
 
-### 8.1 ENV (.env)
+### Branching Rules
+- main → production
+- develop → integrasi
+- feature/** → per fitur
+- bugfix/**, hotfix/**, release/vX.Y.Z (opsional)
+
+### Role Backend Lead
+- PR approval wajib sebelum merge ke develop/main
+- Menetapkan standar code (lint, style, response format)
+- Review arsitektur & ERD saat ada perubahan
+- Gatekeeper security (auth, secrets)
+
+### Commit Message Rules (Conventional Commits)
+`type(scope): description`
+- feat, fix, refactor, docs, style, test, chore, perf, ci
+Contoh:
 ```
-APP_NAME=cookchela
+feat(auth): implement google login ID token verification
+fix(recipe): correct ingredient normalization to lowercase
+```
+
+### Code Review Standard
+- Cek guideline kepatuhan (folder, naming)
+- Response JSON konsisten
+- Validasi lengkap (Request untuk create/update)
+- Query efisien (hindari N+1)
+- Unit/feature tests untuk endpoint kritis
+
+### Testing API dengan Postman
+- Sediakan Postman Collection (Auth, Home, Feed, Recipe CRUD, Bookmark, Search, Profile)
+- Variabel: baseUrl, accessToken, refreshToken
+- Jalankan smoke test tiap PR
+
+### Versioning Database Migration
+- Nama waktu: `YYYY_MM_DD_HHMMSS_create_table_name.php`
+- Perubahan skema → migration terpisah + seeder jika perlu
+- Migrate pada staging sebelum prod
+- Gunakan changelog internal (README_db.md) ringkas
+
+---
+
+## Bagian 5 — Supabase + Render Deployment Guide
+
+### Setup Environment (.env)
+```
+APP_NAME=CookChela
 APP_ENV=production
 APP_KEY=base64:GENERATE
 APP_DEBUG=false
@@ -908,273 +848,194 @@ DB_DATABASE=<supabase_db>
 DB_USERNAME=<supabase_user>
 DB_PASSWORD=<supabase_pass>
 
-ACCESS_TOKEN_EXPIRES_SECONDS=1800
-REFRESH_TOKEN_EXPIRES_DAYS=30
-JWT_SECRET=<jika custom JWT>
-
+# Auth
+SUPABASE_URL=https://<PROJECT>.supabase.co
+SUPABASE_ANON_KEY=<anon>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+SUPABASE_JWT_ISSUER=https://<PROJECT>.supabase.co/auth/v1
 GOOGLE_OAUTH_CLIENT_ID=<client-id>
 GOOGLE_OAUTH_VERIFY_ENDPOINT=https://oauth2.googleapis.com/tokeninfo
 
+# Tokens
+ACCESS_TOKEN_EXPIRES_SECONDS=1800
+REFRESH_TOKEN_EXPIRES_DAYS=30
+
+# Storage
 SUPABASE_STORAGE_BUCKET=recipe-images
 MAX_UPLOAD_MB=3
+
+# CORS
+ALLOWED_ORIGINS=https://cookchela.app,https://staging.cookchela.app
 ```
 
-### 8.2 Langkah Deploy
-1. Push kode ke GitHub.
-2. Hubungkan repo ke Render (Web Service).
-3. Build Command:
-   ```
-   composer install --no-dev --optimize-autoloader
-   php artisan key:generate --force
-   php artisan migrate --force
-   php artisan config:cache
-   php artisan route:cache
-   php artisan view:cache
-   ```
-4. Start Command:
-   ```
-   php artisan serve --host 0.0.0.0 --port $PORT
-   ```
-5. Set domain & SSL (Render custom domain).
-6. Health check endpoint: `/api/v1/health` (buat sederhana).
+### Supabase Storage untuk Gambar
+- Buat bucket `recipe-images` (public atau signed URL)
+- FE upload langsung disarankan (hemat beban server), backend menerima URL
+- Jika via backend: gunakan service role key; validasi MIME dan ukuran
 
-### 8.3 Storage Gambar
-- FE upload langsung ke Supabase Storage (disarankan) → dapat URL → kirim pada create/update recipe.
-- Jika via backend: gunakan service role key di server untuk upload; validasi ukuran & MIME.
-
-### 8.4 Monitoring
-- Aktifkan logging level `info`.
-- Rotasi log otomatis (Render).
-- Optional: Sentry untuk error FE + BE.
-
----
-
-## 9. Branching Workflow
-
-### 9.1 Branch
-| Tipe | Format | Contoh |
-|------|--------|--------|
-| Main | main | main |
-| Development | develop | develop |
-| Fitur | feature/<kebab> | feature/login-google |
-| Bugfix | bugfix/<kebab> | bugfix/recipe-404 |
-| Hotfix | hotfix/<kebab> | hotfix/migration-error |
-| Release (opsional) | release/vX.Y.Z | release/v1.0.0 |
-
-### 9.2 Alur
-1. Mulai dari `develop`.
-2. Buat `feature/...`.
-3. Buat PR ke `develop`.
-4. Review (1 dev + Tech Lead).
-5. Merge ke `develop`.
-6. Release: PR `develop` → `main`.
-7. Tag versi (`git tag v1.0.0`).
-
-### 9.3 Commit Message (Conventional)
-`type(scope): description`
-
-| Type | Gunakan Saat |
-|------|--------------|
-| feat | Fitur baru |
-| fix | Perbaikan bug |
-| refactor | Perombakan kode tanpa fitur baru |
-| docs | Dokumentasi |
-| style | Perubahan format (tidak ubah logic) |
-| test | Tambah/perbaikan test |
-| chore | Maintenance |
-| perf | Optimisasi |
-| ci | Perubahan pipeline |
-
-Contoh:
-```
-feat(auth): implementasi login google
-fix(recipe): perbaiki validasi ingredient kosong
+### Migration Command
+```bash
+php artisan migrate --force
+php artisan db:seed --class=CategorySeeder
+php artisan db:seed --class=IngredientGroupSeeder
 ```
 
-### 9.4 Pull Request Template
+### Render Deploy Pipeline
+- Hubungkan repo
+- Build Command:
 ```
-## Deskripsi
-Ringkas perubahan.
-
-## Issue Terkait
-Closes #ISSUE
-
-## Perubahan
-- [ ] Endpoint baru /auth/login/google
-- [ ] Migration user_oauth_accounts
-
-## Cara Test
-Langkah reproduksi / screenshot Postman.
-
-## Migration
-Ya/Tidak. Nama file.
-
-## Catatan
-Hal unik untuk reviewer.
+composer install --no-dev --optimize-autoloader
+php artisan key:generate --force
+php artisan migrate --force
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
 ```
+- Start Command:
+```
+php artisan serve --host 0.0.0.0 --port $PORT
+```
+- Health Check: `/api/v1/health` (buat sederhana, return `ok`)
 
-### 9.5 Review Focus
-- Kepatuhan guideline.
-- Query performa (hindari N+1).
-- Validasi & error mapping konsisten.
-- Tidak ada sensitive key di response.
+### Allowed CORS
+- Middleware CORS: hanya domain FE (ALLOWED_ORIGINS)
+- Methods: GET, POST, PUT, DELETE, OPTIONS
+- Headers: Authorization, Content-Type
 
-### 9.6 Tech Lead Role
-- Final approval PR ke `main`.
-- Menyetujui rancangan migration & ERD.
-- Menangani konflik arsitektur.
-- Audit keamanan autentikasi.
-
----
-
-## 10. Security & Best Practices
-
-| Area | Rekomendasi |
-|------|-------------|
-| Password | Hash bcrypt (cost aman) |
-| Refresh Token | Simpan hash (SHA-256) bukan plaintext |
-| Oauth | Verifikasi id_token ke endpoint Google (tokeninfo) |
-| Rate Limit | 60 req/menit/user untuk auth endpoints |
-| Input Sanitization | Gunakan Laravel validation + escape output |
-| Soft Delete | Resep: filter `deleted_at IS NULL` |
-| File Upload | Validasi ukuran & MIME (image/jpeg, image/png) |
-| Logging | Jangan log password/refresh token |
+### Backup Plan
+- Supabase: backup otomatis harian (default project)
+- Export DB snapshot tiap minggu (manual/CI)
+- Simpan Postman Export & Migration versioning di repo
+- Recovery: restore Supabase backup → run migrations delta → smoke test
 
 ---
 
-## 11. Performance & Optimisasi Awal
+## Contoh Kode Minimal per Domain
 
-| Target | Aksi |
-|--------|------|
-| Feed cepat | Index recipes(created_at DESC) |
-| Search include/exclude | Pre-cache ingredient_names & index GIN jika perlu |
-| Minim N+1 | Eager load relations di RecipeRepository |
-| Pagination stabil | Keyset (created_at + id) vs offset |
+### AuthService (verifikasi Google ID token — simplified)
+```php
+public function loginGoogle(string $idToken, ?string $deviceId, Request $req): array {
+    $payload = $this->googleVerifier->verify($idToken); // panggil tokeninfo
+    $email = $payload['email'];
+    $normalized = strtolower($email);
 
----
+    $user = $this->userRepo->findByNormalizedEmail($normalized) ?? $this->userRepo->create([
+        'name' => $payload['name'] ?? 'Pengguna',
+        'email' => $email,
+        'normalized_email' => $normalized,
+        'provider_primary' => 'google',
+        'avatar_url' => $payload['picture'] ?? null,
+    ]);
 
-## 12. Testing Checklist
+    $this->oauthRepo->ensureLinked($user->id, 'google', $payload['sub']);
+    $this->loginAuditRepo->record($user->id, 'google', $deviceId, $req->ip(), $req->userAgent());
 
-| Test | Detail |
-|------|--------|
-| Auth Register | Valid & invalid (password mismatch) |
-| Auth Login | Email salah, password salah |
-| Google Login | Token valid & invalid |
-| Create Recipe | Bahan & langkah minimal terpenuhi |
-| Update Recipe | Ganti ingredients → lama terhapus |
-| Delete Recipe | Soft delete benar |
-| Feed Pagination | next_cursor berubah benar |
-| Search Include/Exclude | Resep yang sesuai & tidak sesuai |
-| Bookmark Add/Delete | Unique constraint bekerja |
-
----
-
-## 13. Roadmap Ekstensi (Future)
-
-| Fitur | Deskripsi |
-|-------|-----------|
-| Komentar | Tabel comments + pagination |
-| Rating | Tabel ratings (1–5) agregasi ke resep |
-| Notifikasi | Push notif (Expo / FCM) |
-| Meal Planner | Jadwal resep mingguan |
-| Advanced Search | Full-text (pg_trgm / tsvector) |
-
----
-
-## 14. Checklist Implementasi Internal (Isi oleh Tim)
-
-| Task | Status |
-|------|--------|
-| Buat semua migration dasar + tambahan auth tables | |
-| Implement AuthService & Google verification | |
-| Implement Refresh Token logic | |
-| Implement RecipeService (create/update/delete) | |
-| Implement SearchService (SQL composition) | |
-| Implement BookmarkService | |
-| Endpoint /auth/recent + device_id logic | |
-| Postman Collection import & uji | |
-| Tambah unit & feature tests | |
-| Deploy ke staging (Render) | |
-| Review Tech Lead | |
-| Go-Live | |
-
----
-
-## 15. Catatan Integrasi FE (Flutter)
-
-| Elemen UI | Endpoint / Data | Catatan |
-|-----------|-----------------|---------|
-| Login | /auth/login | Kirim device_id (UUID) agar masuk audit |
-| Login Google | /auth/login/google | Gunakan Google Sign-In SDK → id_token |
-| Pilih Akun | /auth/recent?device_id=XYZ | Tampilkan email + provider_primary |
-| Daftar | /auth/register | Validasi konfirmasi password lokal + server |
-| Feed | /recipes | Gunakan next_cursor untuk infinite scroll |
-| Detail Resep | /recipes/{id} | Bookmark status jika login |
-| Buat Resep | /recipes | Upload cover lebih dulu → kirim URL |
-| Bookmark Toggle | POST/DELETE /recipes/{id}/bookmark | Update local state segera (optimistic) |
-| Search | /search/recipes | Build query string dari filter form |
-| Kategori | /categories | Cache lokal untuk form create/update |
-
-Device ID:
-- Generate sekali (UUID) & simpan di secure storage.
-- Kirim di setiap login agar audit & recent account sinkron.
-
----
-
-## 16. Pseudocode Penting
-
-### 16.1 Keyset Pagination (Repository)
-```sql
-SELECT id, title, created_at
-FROM recipes
-WHERE deleted_at IS NULL
-  AND (
-    :cursor_created_at IS NULL
-    OR created_at < :cursor_created_at
-    OR (created_at = :cursor_created_at AND id < :cursor_id)
-  )
-ORDER BY created_at DESC, id DESC
-LIMIT :limit_plus_one;
+    $tokens = $this->tokenService->issueTokens($user->id);
+    return ['user' => $user, 'access_token' => $tokens->access, 'refresh_token' => $tokens->refresh, 'expires_in' => $tokens->ttl];
+}
 ```
 
-### 16.2 Search Include/Exclude (Simplified)
-```sql
-WITH base AS (
-  SELECT r.*
-  FROM recipes r
-  WHERE r.deleted_at IS NULL
-    AND (:q IS NULL OR r.title ILIKE '%' || :q || '%')
-)
-SELECT b.*
-FROM base b
-WHERE (
-  :include_count = 0 OR (
-    SELECT COUNT(DISTINCT ri.name)
-    FROM recipe_ingredients ri
-    WHERE ri.recipe_id = b.id
-      AND ri.name = ANY(:include_array)
-  ) = :include_count
-)
-AND NOT EXISTS (
-  SELECT 1
-  FROM recipe_ingredients ri2
-  WHERE ri2.recipe_id = b.id
-    AND ri2.name = ANY(:exclude_array)
-)
-LIMIT :limit_plus_one;
+### RecipeService (create — normalized ingredient names)
+```php
+public function create(User $user, array $payload): Recipe {
+    $payload['ingredients'] = array_map(function($ing){
+        $ing['name'] = strtolower(trim($ing['name']));
+        return $ing;
+    }, $payload['ingredients']);
+
+    return DB::transaction(function() use($user, $payload) {
+        $recipe = $this->recipeRepo->create($user->id, $payload);
+        $this->recipeRepo->replaceIngredients($recipe->id, $payload['ingredients']);
+        $this->recipeRepo->replaceSteps($recipe->id, $payload['steps']);
+        $this->recipeRepo->syncCategories($recipe->id, $payload['category_ids'] ?? []);
+        return $recipe;
+    });
+}
+```
+
+### LikeService (idempotent)
+```php
+public function like(User $user, Recipe $recipe): array {
+    if ($this->likeRepo->exists($user->id, $recipe->id)) return $this->state($recipe->id, $user->id);
+    $this->likeRepo->create($user->id, $recipe->id);
+    $this->recipeRepo->incrementLikes($recipe->id);
+    return $this->state($recipe->id, $user->id);
+}
+```
+
+### SearchService (include/exclude sederhana)
+```php
+public function search(array $filters, ?User $user) {
+    $include = array_map('strtolower', $filters['include'] ?? []);
+    $exclude = array_map('strtolower', $filters['exclude'] ?? []);
+    return $this->searchRepo->searchRecipes($filters['q'] ?? null, $include, $exclude, $filters['category_ids'] ?? [], $filters['cursor'] ?? null, $filters['limit'] ?? 10, $user?->id);
+}
 ```
 
 ---
 
-## 17. Penutup
+## Sequence Diagram (contoh alur Create Recipe)
 
-Dokumen ini merupakan baseline lengkap untuk memulai implementasi backend dan frontend cookchela dengan UI autentikasi terbaru (pilih akun + integrasi Google). Semua tim (FE & BE) diharapkan mengikuti spesifikasi ini secara ketat agar konsistensi terjaga dan risiko revisi berulang berkurang.
+```plantuml
+@startuml
+actor FE
+FE -> API: POST /api/v1/recipes (Bearer)
+API -> AuthMiddleware: verify token (Supabase JWKS)
+AuthMiddleware --> API: userId
+API -> RecipeService: create(userId, payload)
+RecipeService -> RecipeRepository: create base recipe
+RecipeRepository --> RecipeService: recipeId
+RecipeService -> RecipeRepository: replaceIngredients(recipeId, list)
+RecipeService -> RecipeRepository: replaceSteps(recipeId, list)
+RecipeService -> RecipeRepository: syncCategories(recipeId, list)
+RecipeService --> API: recipe summary
+API --> FE: 201 { id, title }
+@enduml
+```
 
-Jika memerlukan:
-- Contoh migration penuh
-- Template Form Request Laravel
-- Unit test contoh
+---
 
-Silakan minta di komunikasi berikut.
+## Weekly Progress Checklist per Developer
 
-Selamat mengembangkan!
+### Developer A (Auth + Profile)
+- [ ] Implement Google token verification & link OAuth account
+- [ ] /auth/me, /auth/logout, /auth/logout-all, /auth/refresh
+- [ ] PATCH /profile + GET /users/{username}
+- [ ] Validation (username unik, password regex)
+- [ ] Unit tests AuthService & ProfileService
+- [ ] Postman: Auth & Profile folder
+
+### Developer B (Recipe + Feed + Home)
+- [ ] Migrations recipes, ingredients, steps, categories, recipe_category
+- [ ] RecipeService: create/update/delete + sync categories
+- [ ] FeedService: GET /recipes (pagination)
+- [ ] HomeService: GET /home + GET /recipes/featured
+- [ ] Upload cover (multipart) + Storage integration (opsional)
+- [ ] Unit/feature tests untuk CRUD & feed
+- [ ] Postman: Recipes & Home folder
+
+### Developer C (Bookmark + Search + Profile Page)
+- [ ] Migrations bookmarks, recipe_likes, ingredient_groups(+members), user_search_history
+- [ ] Bookmark endpoints + LikeService (POST/DELETE)
+- [ ] Search endpoints: /search/recipes, /search/suggest, /ingredients/groups
+- [ ] Search history: GET/DELETE
+- [ ] Feature tests search & bookmark
+- [ ] Postman: Bookmark & Search folder
+
+### Backend Lead
+- [ ] Setup CI for test & lint
+- [ ] Review PR wajib (API format, validation, security)
+- [ ] Manage environment secrets (Render + Supabase)
+- [ ] Ensure migration versioning & seeding baseline
+
+---
+
+## Penutup
+
+Dokumen ini disusun untuk eksekusi langsung oleh tim backend mahasiswa (3 orang) dengan role terpisah dan standar teknis yang ketat. Jika diperlukan:
+
+- Postman Collection lengkap (siap impor)
+- SQL trigger untuk sinkron likes_count
+- Seed data awal (kategori & ingredient groups)
+
+Beritahu: “buat postman extended” atau “buat trigger likes_count” untuk saya lengkapi selanjutnya.
